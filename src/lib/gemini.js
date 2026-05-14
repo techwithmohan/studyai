@@ -1,5 +1,5 @@
 // Now calling the VPS Backend instead of Gemini SDK directly for security
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api'
 
 export const getGeminiResponse = async (prompt, history = []) => {
   try {

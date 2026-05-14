@@ -9,10 +9,11 @@ import {
   ChevronLeft, ChevronRight
 } from 'lucide-react'
 import './Dashboard.css'
+import ReactMarkdown from 'react-markdown'
 import { getGeminiResponse } from '../../lib/gemini'
 
 // Constants
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api'
 const sampleQuestions = [
   'Summarize my uploaded documents',
   'What are the key concepts mentioned?',
@@ -37,59 +38,83 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const chatEndRef = useRef(null)
 
-  // Fetch documents on load
+  const [currentModel, setCurrentModel] = useState('Gemini 1.5 Flash')
+
+  // Fetch documents and config on load
   useEffect(() => {
-    const fetchDocs = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(`${API_URL}/documents`)
-        const data = await res.json()
-        setDocuments(data)
+        const [docsRes, configRes] = await Promise.all([
+          fetch(`${API_URL}/documents`),
+          fetch(`${API_URL}/config`)
+        ])
+        
+        const docs = await docsRes.json()
+        const config = await configRes.json()
+        
+        setDocuments(Array.isArray(docs) ? docs : [])
+        if (config.model) setCurrentModel(config.model)
       } catch (err) {
-        console.error('Failed to fetch documents:', err)
+        console.error('Failed to fetch data:', err)
       } finally {
         setIsLoading(false)
       }
     }
-    fetchDocs()
+    fetchData()
   }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
     onDrop: async (acceptedFiles) => {
-      const formData = new FormData()
-      acceptedFiles.forEach(file => {
-        formData.append('pdf', file)
-      })
+      for (const file of acceptedFiles) {
+        // Check local duplicate before uploading
+        if (documents.some(d => d.name === file.name)) {
+          alert(`"${file.name}" already exists. Skipping duplicate.`);
+          continue;
+        }
 
-      // Optimistic UI: Add temporary processing state
-      const tempDocs = acceptedFiles.map((f, i) => ({
-        id: `temp-${Date.now()}-${i}`,
-        name: f.name,
-        size: (f.size / (1024 * 1024)).toFixed(1) + ' MB',
-        status: 'processing'
-      }))
-      setDocuments(prev => [...tempDocs, ...prev])
+        const formData = new FormData();
+        formData.append('pdf', file);
 
-      try {
-        const res = await fetch(`${API_URL}/upload`, {
-          method: 'POST',
-          body: formData
-        })
-        const data = await res.json()
-        
-        // Replace temp doc with real one from server
-        setDocuments(prev => prev.map(d => 
-          d.name === data.document.name && d.status === 'processing' 
-          ? { ...data.document, status: 'ready' } 
-          : d
-        ))
-      } catch (err) {
-        console.error('Upload failed:', err)
-        setDocuments(prev => prev.filter(d => d.status !== 'processing'))
-        alert('Failed to upload file. Please check if the backend is running.')
+        // Optimistic UI
+        const tempId = `temp-${Date.now()}`;
+        const tempDoc = {
+          id: tempId,
+          name: file.name,
+          size: file.size >= 1024 * 1024
+            ? (file.size / (1024 * 1024)).toFixed(2) + ' MB'
+            : (file.size / 1024).toFixed(1) + ' KB',
+          status: 'processing'
+        };
+        setDocuments(prev => [tempDoc, ...prev]);
+
+        try {
+          const res = await fetch(`${API_URL}/upload`, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (res.status === 409) {
+            const err = await res.json();
+            alert(err.error || 'Duplicate file.');
+            setDocuments(prev => prev.filter(d => d.id !== tempId));
+            continue;
+          }
+
+          const data = await res.json();
+          setDocuments(prev => prev.map(d =>
+            d.id === tempId
+              ? { ...data.document, status: 'ready' }
+              : d
+          ));
+        } catch (err) {
+          console.error('Upload failed:', err);
+          setDocuments(prev => prev.filter(d => d.id !== tempId));
+          alert('Failed to upload file. Please check if the backend is running.');
+        }
       }
     }
-  })
+  });
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -112,6 +137,28 @@ export default function Dashboard() {
       setIsTyping(false)
     }
   }
+
+  // Document actions
+  const viewDocument = (doc) => {
+    window.open(`${API_URL}/documents/${doc.id}/view`, '_blank');
+  };
+
+  const downloadDocument = (doc) => {
+    const a = document.createElement('a');
+    a.href = `${API_URL}/documents/${doc.id}/view`;
+    a.download = doc.name;
+    a.click();
+  };
+
+  const deleteDocument = async (doc) => {
+    if (!confirm(`Delete "${doc.name}"?`)) return;
+    try {
+      await fetch(`${API_URL}/documents/${doc.id}`, { method: 'DELETE' });
+      setDocuments(prev => prev.filter(d => d.id !== doc.id));
+    } catch (err) {
+      alert('Failed to delete document.');
+    }
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -156,9 +203,9 @@ export default function Dashboard() {
                       )}
                     </div>
                     <div className="dash-doc__actions">
-                      <button className="dash-doc__btn" title="View"><Eye size={16} /></button>
-                      <button className="dash-doc__btn" title="Download"><Download size={16} /></button>
-                      <button className="dash-doc__btn dash-doc__btn--danger" title="Delete">
+                      <button className="dash-doc__btn" title="View" onClick={() => viewDocument(doc)}><Eye size={16} /></button>
+                      <button className="dash-doc__btn" title="Download" onClick={() => downloadDocument(doc)}><Download size={16} /></button>
+                      <button className="dash-doc__btn dash-doc__btn--danger" title="Delete" onClick={() => deleteDocument(doc)}>
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -174,7 +221,7 @@ export default function Dashboard() {
           <div className="dash-content dash-content--chat">
             <div className="dash-content__header">
               <h2>AI Chat</h2>
-              <span className="dash-content__badge"><Bot size={14} /> Gemini 1.5 Flash</span>
+              <span className="dash-content__badge"><Bot size={14} /> {currentModel}</span>
             </div>
 
             <div className="dash-chat">
@@ -185,12 +232,7 @@ export default function Dashboard() {
                       {msg.role === 'bot' ? <Bot size={16} /> : <User size={16} />}
                     </div>
                     <div className="dash-chat__bubble">
-                      {msg.text.split('\n').map((line, j) => {
-                        if (line.startsWith('## ')) return <h3 key={j} className="dash-chat__h3">{line.replace('## ', '')}</h3>
-                        if (line.startsWith('**') && line.endsWith('**')) return <strong key={j}>{line.replace(/\*\*/g, '')}</strong>
-                        if (line === '') return <br key={j} />
-                        return <p key={j}>{line}</p>
-                      })}
+                      <ReactMarkdown>{msg.text}</ReactMarkdown>
                     </div>
                   </div>
                 ))}
