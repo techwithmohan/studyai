@@ -9,6 +9,8 @@ import {
   ChevronLeft, ChevronRight
 } from 'lucide-react'
 import './Dashboard.css'
+import { getGeminiResponse } from '../../lib/gemini'
+import { supabase } from '../../lib/supabase'
 
 // Mock data
 const mockDocuments = [
@@ -62,10 +64,6 @@ const mockQuiz = [
 const sidebarItems = [
   { key: 'documents', icon: FileText, label: 'My Documents' },
   { key: 'chat', icon: MessageSquare, label: 'AI Chat' },
-  { key: 'summaries', icon: Brain, label: 'Summaries' },
-  { key: 'quiz', icon: Zap, label: 'Quiz' },
-  { key: 'infographics', icon: Image, label: 'Infographics' },
-  { key: 'analytics', icon: BarChart3, label: 'Analytics' },
 ]
 
 export default function Dashboard() {
@@ -101,34 +99,20 @@ export default function Dashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const msg = text || chatInput
     if (!msg.trim()) return
-    setMessages(prev => [...prev, { role: 'user', text: msg }])
+    
+    const newUserMsg = { role: 'user', text: msg }
+    setMessages(prev => [...prev, newUserMsg])
     setChatInput('')
     setIsTyping(true)
 
-    const responses = {
-      'cell division': "## Cell Division Summary\n\nCell division is the process by which a parent cell divides into two or more daughter cells.\n\n**Key Types:**\n- **Mitosis**: Produces 2 identical diploid cells (for growth & repair)\n- **Meiosis**: Produces 4 unique haploid cells (for reproduction)\n\n**Mitosis Phases:**\n1. Prophase - chromosomes condense\n2. Metaphase - chromosomes align at equator\n3. Anaphase - chromosomes separate\n4. Telophase - nuclear envelopes reform\n\n📄 *Source: Biology Chapter 5, Pages 12-18*",
-      'organic compounds': "## Key Organic Compounds\n\nOrganic compounds are carbon-based molecules essential to life.\n\n**Four Major Groups:**\n1. **Carbohydrates** - Energy source (glucose, starch)\n2. **Lipids** - Energy storage & cell membranes\n3. **Proteins** - Enzymes, structure, transport\n4. **Nucleic Acids** - DNA & RNA for genetic info\n\n**Key Functional Groups:** Hydroxyl (-OH), Carboxyl (-COOH), Amino (-NH₂)\n\n📄 *Source: Chemistry Notes, Pages 5-14*",
-      'newton': "## Newton's Laws of Motion\n\n**1st Law (Inertia):**\nAn object at rest stays at rest, and an object in motion stays in motion unless acted upon by an external force.\n\n**2nd Law (F=ma):**\nForce equals mass times acceleration. The acceleration of an object is directly proportional to the net force.\n\n**3rd Law (Action-Reaction):**\nFor every action, there is an equal and opposite reaction.\n\n📄 *Source: Physics Formulas, Pages 3-7*",
-      'world war': "## Causes of World War II\n\n**Primary Causes:**\n1. **Treaty of Versailles** - Harsh penalties on Germany\n2. **Rise of Fascism** - Hitler, Mussolini, militarist Japan\n3. **Appeasement Policy** - Britain/France failed to stop aggression\n4. **Invasion of Poland** - September 1, 1939\n\n**Contributing Factors:**\n- Great Depression economic instability\n- Failure of the League of Nations\n- German rearmament and expansionism\n\n📄 *Source: History Summary, Pages 1-8*"
-    }
-
-    setTimeout(() => {
-      const lowerMsg = msg.toLowerCase()
-      let response = "I've searched through your uploaded documents. Based on the content, here's what I found:\n\nThis is a **demo response**. In the full version, the AI would analyze your specific PDFs using RAG (Retrieval-Augmented Generation) to provide accurate, sourced answers.\n\n💡 *Try asking about: cell division, organic compounds, Newton's laws, or World War II*"
-      
-      for (const [key, val] of Object.entries(responses)) {
-        if (lowerMsg.includes(key)) {
-          response = val
-          break
-        }
-      }
-      
-      setIsTyping(false)
-      setMessages(prev => [...prev, { role: 'bot', text: response }])
-    }, 1500)
+    // Call real Gemini API
+    const response = await getGeminiResponse(msg, messages)
+    
+    setIsTyping(false)
+    setMessages(prev => [...prev, { role: 'bot', text: response }])
   }
 
   const renderContent = () => {
@@ -251,192 +235,6 @@ export default function Dashboard() {
                 >
                   <Send size={18} />
                 </button>
-              </div>
-            </div>
-          </div>
-        )
-
-      case 'summaries':
-        return (
-          <div className="dash-content">
-            <div className="dash-content__header">
-              <h2>AI Summaries</h2>
-              <button className="btn btn-primary btn-sm">
-                <Plus size={16} /> Generate New
-              </button>
-            </div>
-
-            <div className="dash-summary-card">
-              <div className="dash-summary__header">
-                <div className="dash-summary__icon"><Brain size={20} /></div>
-                <div>
-                  <h3>{mockSummary.title}</h3>
-                  <span className="dash-summary__meta">Generated 2 hours ago · 42 pages analyzed</span>
-                </div>
-              </div>
-
-              <div className="dash-summary__section">
-                <h4>📌 Key Points</h4>
-                <ul>
-                  {mockSummary.keyPoints.map((point, i) => (
-                    <li key={i}><CheckCircle2 size={14} /> {point}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="dash-summary__section">
-                <h4>🏷️ Core Concepts</h4>
-                <div className="dash-summary__tags">
-                  {mockSummary.concepts.map((c, i) => (
-                    <span key={i} className="dash-summary__tag">{c}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-
-      case 'quiz':
-        return (
-          <div className="dash-content">
-            <div className="dash-content__header">
-              <h2>Practice Quiz</h2>
-              <span className="dash-content__badge"><Zap size={14} /> Auto-Generated</span>
-            </div>
-
-            <div className="dash-quiz">
-              {mockQuiz.map((item, i) => (
-                <div key={i} className="dash-quiz__item" id={`quiz-q-${i}`}>
-                  <h4 className="dash-quiz__question">Q{i + 1}. {item.q}</h4>
-                  <div className="dash-quiz__options">
-                    {item.options.map((opt, j) => {
-                      const selected = quizAnswers[i] === j
-                      const isCorrect = quizSubmitted && j === item.correct
-                      const isWrong = quizSubmitted && selected && j !== item.correct
-                      return (
-                        <button
-                          key={j}
-                          className={`dash-quiz__option ${selected ? 'dash-quiz__option--selected' : ''} ${isCorrect ? 'dash-quiz__option--correct' : ''} ${isWrong ? 'dash-quiz__option--wrong' : ''}`}
-                          onClick={() => !quizSubmitted && setQuizAnswers(prev => ({ ...prev, [i]: j }))}
-                          id={`quiz-${i}-opt-${j}`}
-                        >
-                          <span className="dash-quiz__letter">{String.fromCharCode(65 + j)}</span>
-                          {opt}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-              <button
-                className="btn btn-primary btn-lg"
-                onClick={() => setQuizSubmitted(true)}
-                disabled={Object.keys(quizAnswers).length < mockQuiz.length}
-                id="quiz-submit"
-              >
-                {quizSubmitted ? `Score: ${Object.entries(quizAnswers).filter(([i, a]) => a === mockQuiz[i].correct).length}/${mockQuiz.length}` : 'Submit Answers'}
-              </button>
-            </div>
-          </div>
-        )
-
-      case 'infographics':
-        return (
-          <div className="dash-content">
-            <div className="dash-content__header">
-              <h2>Infographics</h2>
-              <button className="btn btn-primary btn-sm">
-                <Plus size={16} /> Generate New
-              </button>
-            </div>
-
-            <div className="dash-infographic">
-              <div className="dash-infographic__card">
-                <div className="dash-infographic__title">
-                  <Image size={20} />
-                  <span>Cell Division Process</span>
-                </div>
-                <div className="dash-infographic__visual">
-                  <div className="dash-infographic__flow">
-                    {['Interphase', 'Prophase', 'Metaphase', 'Anaphase', 'Telophase', 'Cytokinesis'].map((phase, i) => (
-                      <div key={i} className="dash-infographic__step">
-                        <div className={`dash-infographic__circle dash-infographic__circle--${i}`}>
-                          {i + 1}
-                        </div>
-                        <span>{phase}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="dash-infographic__card">
-                <div className="dash-infographic__title">
-                  <PieChart size={20} />
-                  <span>Organic Compounds Distribution</span>
-                </div>
-                <div className="dash-infographic__visual">
-                  <div className="dash-infographic__bars">
-                    {[
-                      { label: 'Carbohydrates', value: 85, color: '#4F46E5' },
-                      { label: 'Lipids', value: 72, color: '#06B6D4' },
-                      { label: 'Proteins', value: 95, color: '#10B981' },
-                      { label: 'Nucleic Acids', value: 60, color: '#F59E0B' }
-                    ].map((item, i) => (
-                      <div key={i} className="dash-infographic__bar-row">
-                        <span className="dash-infographic__bar-label">{item.label}</span>
-                        <div className="dash-infographic__bar-track">
-                          <div
-                            className="dash-infographic__bar-fill"
-                            style={{ width: `${item.value}%`, background: item.color }}
-                          ></div>
-                        </div>
-                        <span className="dash-infographic__bar-value">{item.value}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-
-      case 'analytics':
-        return (
-          <div className="dash-content">
-            <div className="dash-content__header">
-              <h2>Study Analytics</h2>
-            </div>
-
-            <div className="dash-analytics__stats">
-              {[
-                { icon: FileText, label: 'Documents', value: '12', color: 'primary' },
-                { icon: MessageSquare, label: 'Chat Messages', value: '148', color: 'cyan' },
-                { icon: Clock, label: 'Study Hours', value: '23.5h', color: 'green' },
-                { icon: TrendingUp, label: 'Quiz Score', value: '87%', color: 'orange' },
-              ].map((stat, i) => (
-                <div key={i} className="dash-stat-card">
-                  <div className={`dash-stat-card__icon dash-stat-card__icon--${stat.color}`}>
-                    <stat.icon size={20} />
-                  </div>
-                  <div className="dash-stat-card__value">{stat.value}</div>
-                  <div className="dash-stat-card__label">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="dash-analytics__chart">
-              <h3>Weekly Study Activity</h3>
-              <div className="dash-chart">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-                  const heights = [65, 40, 80, 55, 90, 30, 70]
-                  return (
-                    <div key={i} className="dash-chart__col">
-                      <div className="dash-chart__bar" style={{ height: `${heights[i]}%` }}></div>
-                      <span>{day}</span>
-                    </div>
-                  )
-                })}
               </div>
             </div>
           </div>
